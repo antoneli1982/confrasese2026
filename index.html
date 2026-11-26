@@ -98,9 +98,9 @@ h1 .x{display:inline-block;transform:rotate(-8deg);margin:0 .15em}
 </style>
 </head>
 <body>
-<main class="band">
+<main class="band"><div class="bar"><span id="cloudState" role="status">Abrindo álbum…</span><button class="chip" id="retrySave" hidden>Tentar novamente</button><button class="chip" id="shareAlbum" disabled>Copiar link do álbum</button></div>
   <div class="brand"><h1>Rotina<span class="x">×</span>Confra</h1><span class="sep" aria-hidden="true"></span><span class="logo-w"><span class="logo" role="img" aria-label="Sesé"></span></span></div>
-  <p class="sub">Monte um comparativo por pessoa, com quantas fotos e vídeos quiser de antes e depois. O Revelar passa por todo mundo em sequência: antes, contagem, depois, e vai pra próxima pessoa.</p>
+  <p class="sub">Monte um comparativo por pessoa, com fotos de antes e depois. O Revelar passa por todo mundo em sequência: antes, contagem, depois, e vai pra próxima pessoa.</p>
 
   <div class="stage" id="stage">
     <div class="layer ph" id="A">ROTINA</div>
@@ -132,9 +132,9 @@ h1 .x{display:inline-block;transform:rotate(-8deg);margin:0 .15em}
     <span class="lbl">Extras:</span>
     <button class="chip on" id="cdOn">⏱ Contagem 3·2·1</button>
     <button class="chip on" id="sndOn">🔊 Som</button>
-    <label class="chip" id="musL">🎵 <span id="musN">&nbsp;Subir música</span><input type="file" accept="audio/*" id="mus" hidden></label>
+    
   </div>
-  <p class="hint">Cada pessoa tem seu ▶ para revelar só ela. Arraste vários arquivos de uma vez para cada quadro; a ordem das miniaturas é a ordem da apresentação. Sem música própria, toca uma batida embutida. <b>🎬 Apresentar</b> abre em tela cheia com a logo e roda todos. Atalhos: <b>P</b> apresenta · <b>Esc</b> sai · <b>espaço</b> revela · <b>← →</b> troca a passagem · <b>F</b> tela cheia. Tudo fica só no seu computador.</p>
+  <p class="hint">Cada pessoa tem seu ▶ para revelar só ela. Arraste vários arquivos de uma vez para cada quadro; a ordem das miniaturas é a ordem da apresentação. A apresentação tem uma batida embutida. <b>🎬 Apresentar</b> abre em tela cheia com a logo e roda todos. Atalhos: <b>P</b> apresenta · <b>Esc</b> sai · <b>espaço</b> revela · <b>← →</b> troca a passagem · <b>F</b> tela cheia. Use o link do álbum para abrir as mesmas fotos em outro aparelho. Quem tiver o link pode ver e editar.</p>
 </main>
 
 <script>
@@ -155,7 +155,7 @@ const FX=[
 let fx=0,mode='show',looping=false,busy=false,run=0;
 const bar=$('fx');
 FX.forEach((f,i)=>{const b=document.createElement('button');b.className='chip'+(i?'':' on');b.textContent=f.n;b.onclick=()=>{setFx(i);busy=false;reveal()};bar.appendChild(b)});
-function setFx(i){fx=(i+FX.length)%FX.length;[...bar.querySelectorAll('.chip')].forEach((c,j)=>c.classList.toggle('on',j===fx))}
+function setFx(i){changed();fx=(i+FX.length)%FX.length;[...bar.querySelectorAll('.chip')].forEach((c,j)=>c.classList.toggle('on',j===fx))}
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
 const per=()=>parseFloat($('dur').value)*1000;
 $('dur').oninput=()=>$('durV').textContent=$('dur').value.replace('.',',')+'s';
@@ -172,11 +172,11 @@ function setMedia(el,it,ph){
 }
 function strip(p,k,s){
   s.innerHTML='';
-  if(!p[k].length){s.innerHTML='<small>Nenhum arquivo. Clique em “+ Fotos/vídeos” ou solte aqui.</small>';return}
+  if(!p[k].length){s.innerHTML='<small>Nenhum arquivo. Clique em “+ Fotos” ou solte aqui.</small>';return}
   p[k].forEach((it,i)=>{const t=document.createElement('div');t.className='th';
     if(it.video)t.append(vid(it.url));else t.style.backgroundImage=`url("${it.url}")`;
     const n=document.createElement('i');n.textContent=i+1;const x=document.createElement('button');x.textContent='×';x.title='Remover';
-    x.onclick=()=>{p[k].splice(i,1);strip(p,k,s);toBefore()};t.append(n,x);s.append(t)});
+    x.onclick=()=>{p[k].splice(i,1);changed();strip(p,k,s);toBefore()};t.append(n,x);s.append(t)});
 }
 function render(){
   const box=$('pairs');box.innerHTML='';
@@ -185,14 +185,28 @@ function render(){
     c.innerHTML=`<div class="ptop"><span class="num">#${pi+1}</span><input type="text" placeholder="Nome da pessoa" aria-label="Nome da pessoa ${pi+1}">
       <button class="chip go" data-a="play">▶ Revelar</button><button class="chip" data-a="cmp">↔ Comparar</button>${P.length>1?'<button class="chip" data-a="del">Remover</button>':''}</div>
       <div class="grid">${['A','B'].map(k=>`<div class="drop" data-k="${k}"><div class="head"><span><b>${k==='A'?'📎 Antes (rotina)':'🎉 Depois (confra)'}</b></span>
-      <button class="chip" data-add="${k}">+ Fotos/vídeos</button></div><div class="strip"></div><input type="file" accept="image/*,video/*" multiple hidden></div>`).join('')}</div>`;
-    const nm=c.querySelector('.ptop input');nm.value=p.name;nm.oninput=()=>{p.name=nm.value};
+      <button class="chip" data-add="${k}">+ Fotos</button></div><div class="strip"></div><input type="file" accept="image/*" multiple hidden></div>`).join('')}</div>`;
+    const nm=c.querySelector('.ptop input');nm.value=p.name;nm.oninput=()=>{p.name=nm.value;changed()};
     c.querySelector('[data-a=play]').onclick=()=>{stopLoop();cur=pi;mark();busy=false;reveal([pi])};
     c.querySelector('[data-a=cmp]').onclick=()=>{cur=pi;mark();toSlide()};
-    const del=c.querySelector('[data-a=del]');if(del)del.onclick=()=>{P.splice(pi,1);cur=Math.min(cur,P.length-1);render();toBefore()};
+    const del=c.querySelector('[data-a=del]');if(del)del.onclick=()=>{P.splice(pi,1);changed();cur=Math.min(cur,P.length-1);render();toBefore()};
     c.querySelectorAll('.drop').forEach(d=>{const k=d.dataset.k,f=d.querySelector('input[type=file]'),s=d.querySelector('.strip');
       strip(p,k,s);
-      const add=files=>{for(const fl of files){if(!/^(image|video)\//.test(fl.type))continue;p[k].push({url:URL.createObjectURL(fl),video:fl.type.startsWith('video/')})}strip(p,k,s);stopLoop();cur=pi;mark();toBefore()};
+      const add=async files=>{
+        const batch=Array.from(files);
+        importing++;
+        try{
+          for(const file of batch){
+            if(!file.type.startsWith('image/'))throw Error('Escolha somente fotos.');
+            status('Preparando foto…');
+            const item=await preparePhoto(file);
+            if(!P.includes(p))break;
+            p[k].push(item); changed(); strip(p,k,s);
+          }
+          stopLoop();cur=Math.max(0,P.indexOf(p));mark();toBefore();
+        }catch(error){alert('Falha ao adicionar a foto. '+error.message)}
+        finally{importing--}
+      };
       d.querySelector('[data-add]').onclick=()=>f.click();
       f.onchange=()=>{add(f.files);f.value=''};
       d.ondragover=e=>{e.preventDefault();d.classList.add('over')};
@@ -201,7 +215,7 @@ function render(){
     box.append(c)});
 }
 function mark(){[...$('pairs').children].forEach((c,i)=>c.classList.toggle('cur',i===cur))}
-$('addP').onclick=()=>{P.push({name:'',A:[],B:[]});cur=P.length-1;render();toBefore();$('pairs').lastChild.querySelector('input').focus()};
+$('addP').onclick=()=>{P.push({name:'',A:[],B:[]});changed();cur=P.length-1;render();toBefore();$('pairs').lastChild.querySelector('input').focus()};
 
 /* estados */
 const who=(p,t)=>(p.name?p.name+' · ':'')+t;
@@ -286,9 +300,9 @@ function drop(p){if(!sndOn)return;if(music.src){if(!music.paused)return;try{musi
   const c=ac();if(!c)return;const t=c.currentTime+.05,b=60/124,notes=[220,220,262,196],n=Math.max(16,Math.ceil(((p?p.B.length:1)*(per()+1100))/1000/b));
   for(let i=0;i<n;i++){const x=t+i*b;tone(150,x,.35,'sine',.9,40);noise(x+b/2,.06,.18,7000);if(i%2)noise(x,.12,.15,1500);tone(notes[(i>>2)%4],x+b/2,.2,'sawtooth',.06)}}
 function stopSound(){try{music.pause()}catch(e){}}
-$('cdOn').onclick=()=>{cdOn=!cdOn;$('cdOn').classList.toggle('on',cdOn)};
-$('sndOn').onclick=()=>{sndOn=!sndOn;$('sndOn').classList.toggle('on',sndOn);if(!sndOn)stopSound()};
-$('mus').onchange=e=>{const f=e.target.files[0];if(!f)return;music.src=URL.createObjectURL(f);$('musN').textContent=' '+f.name.slice(0,22);$('musL').classList.add('on')};
+$('cdOn').onclick=()=>{cdOn=!cdOn;changed();$('cdOn').classList.toggle('on',cdOn)};
+$('sndOn').onclick=()=>{sndOn=!sndOn;changed();$('sndOn').classList.toggle('on',sndOn);if(!sndOn)stopSound()};
+
 
 /* controles */
 function stopLoop(){looping=false;$('loop').classList.remove('on')}
@@ -306,7 +320,122 @@ function presOff(){stage.classList.remove('pres');run++;busy=false;stopSound();t
 $('pres').onclick=presOn;$('exit').onclick=presOff;
 document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement&&stage.classList.contains('pres')){stage.classList.remove('pres')}});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&stage.classList.contains('pres'))presOff();if((e.key==='p'||e.key==='P')&&e.target.tagName!=='INPUT')presOn()});
-render();toBefore();
+
+const base='https://sala-conecta-default-rtdb.firebaseio.com/confrasese2026/albums/';
+const encoder=new TextEncoder(), decoder=new TextDecoder();
+const uploaded=new Set();
+let albumURL, key, tag, active=false, ready=false, dirty=false, conflict=false, timer, importing=0;
+let committed=new Set();
+const status=message=>{$('cloudState').textContent=message};
+function encode(bytes){
+  let raw='';
+  for(let i=0;i<bytes.length;i+=8192)raw+=String.fromCharCode(...bytes.subarray(i,i+8192));
+  return btoa(raw);
+}
+function decode(value){return Uint8Array.from(atob(value),c=>c.charCodeAt(0))}
+async function seal(value){
+  const iv=crypto.getRandomValues(new Uint8Array(12));
+  const cipher=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,encoder.encode(value));
+  return encode(iv)+'.'+encode(new Uint8Array(cipher));
+}
+async function unseal(value){
+  const [iv,cipher]=value.split('.');
+  return decoder.decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:decode(iv)},key,decode(cipher)));
+}
+async function api(path,options={}){
+  const res=await fetch(albumURL+'/'+path+'.json',{cache:'no-store',...options});
+  if(res.status===412){conflict=true;throw Error('O álbum mudou em outro aparelho. Reabra o link antes de continuar.')}
+  if(!res.ok)throw Error('Firebase retornou '+res.status+'. Confira sua conexão e tente novamente.');
+  return res;
+}
+async function preparePhoto(file){
+  const url=URL.createObjectURL(file), img=new Image();
+  try{
+    img.src=url; await img.decode();
+    const scale=Math.min(1,1600/Math.max(img.width,img.height));
+    const canvas=document.createElement('canvas');
+    canvas.width=Math.max(1,Math.round(img.width*scale));canvas.height=Math.max(1,Math.round(img.height*scale));
+    const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.drawImage(img,0,0,canvas.width,canvas.height);
+    return {id:crypto.randomUUID(),url:canvas.toDataURL('image/jpeg',0.78)};
+  }finally{URL.revokeObjectURL(url)}
+}
+function changed(){
+  if(!ready)return;
+  dirty=true;clearTimeout(timer);status('Alterações pendentes…');
+  timer=setTimeout(save,450);
+}
+async function save(){
+  if(active||!ready||conflict||!dirty)return;
+  active=true;$('retrySave').hidden=true;
+  try{
+    while(dirty){
+      dirty=false;status('Salvando no Firebase…');
+      const photos=P.flatMap(p=>p.A.concat(p.B));
+      const people=P.map(p=>({name:p.name,A:p.A.map(it=>it.id),B:p.B.map(it=>it.id)}));
+      const manifest={people,nA:$('nA').value,nB:$('nB').value,dur:$('dur').value,fx,cdOn,sndOn};
+      for(const photo of photos){
+        if(uploaded.has(photo.id))continue;
+        await api('photos/'+photo.id,{method:'PUT',body:JSON.stringify(await seal(photo.url))});
+        uploaded.add(photo.id);
+      }
+      await api('state',{method:'PUT',headers:{'if-match':tag,'X-Firebase-ETag':'true'},body:JSON.stringify(await seal(JSON.stringify(manifest)))}).then(r=>{
+        tag=r.headers.get('etag');if(!tag)throw Error('O Firebase não confirmou a versão. Reabra o álbum.');
+      });
+      const next=new Set(photos.map(it=>it.id));
+      for(const id of committed)if(!next.has(id))await api('photos/'+id,{method:'DELETE'});
+      committed=next;
+    }
+    status('Salvo no Firebase');
+  }catch(e){dirty=true;status('Não foi salvo. '+e.message);$('retrySave').hidden=conflict}
+  finally{active=false}
+}
+function editing(enabled){
+  for(const el of document.querySelector('main').children){
+    if(!el.contains($('cloudState')))el.inert=!enabled;
+  }
+}
+async function openAlbum(){
+  editing(false);$('retrySave').hidden=true;
+  try{
+    const storeKey='confra2026.album';
+    const hash=new URLSearchParams(location.hash.slice(1));
+    let secret=hash.get('album')||localStorage.getItem(storeKey);
+    if(!secret)secret=encode(crypto.getRandomValues(new Uint8Array(32))).replace(/=+$/,'').replace(/\+/g,'-').replace(/\//g,'_');
+    if(!/^[A-Za-z0-9_-]{43}$/.test(secret))throw Error('Link de álbum inválido.');
+    const bytes=decode(secret.replace(/-/g,'+').replace(/_/g,'/'));
+    key=await crypto.subtle.importKey('raw',bytes,'AES-GCM',false,['encrypt','decrypt']);
+    const digest=new Uint8Array(await crypto.subtle.digest('SHA-256',bytes));
+    albumURL=base+Array.from(digest,b=>b.toString(16).padStart(2,'0')).join('');
+    const response=await api('state',{headers:{'X-Firebase-ETag':'true'}});
+    tag=response.headers.get('etag');if(!tag)throw Error('O banco não informou a versão do álbum.');
+    const packed=await response.json();
+    if(packed!==null){
+      const m=JSON.parse(await unseal(packed)),people=[];
+      for(const person of m.people){
+        const p={name:person.name,A:[],B:[]};
+        for(const side of ['A','B'])for(const id of person[side]){
+          if(!/^[a-f0-9-]{36}$/.test(id))throw Error('Referência de foto inválida.');
+          const url=await unseal(await (await api('photos/'+id)).json());
+          p[side].push({id,url});uploaded.add(id);committed.add(id);
+        }
+        people.push(p);
+      }
+      P.splice(0,P.length,...people);$('nA').value=m.nA;$('nB').value=m.nB;$('dur').value=m.dur;$('dur').oninput();
+      setFx(m.fx);cdOn=m.cdOn;sndOn=m.sndOn;
+      $('cdOn').classList.toggle('on',cdOn);$('sndOn').classList.toggle('on',sndOn);
+    }
+    history.replaceState(null,'','#album='+secret);localStorage.setItem(storeKey,secret);
+    ready=true;render();toBefore();editing(true);$('shareAlbum').disabled=false;
+    status(packed?'Álbum carregado do Firebase':'Álbum pronto para receber fotos');
+  }catch(e){status('Falha ao abrir o álbum. '+e.message);$('retrySave').hidden=false}
+}
+$('retrySave').onclick=()=>ready?save():openAlbum();
+$('shareAlbum').onclick=async()=>{try{await navigator.clipboard.writeText(location.href);$('shareAlbum').textContent='Link copiado'}catch{prompt('Copie o link do álbum',location.href)}};
+for(const id of ['nA','nB','dur'])$(id).addEventListener('input',changed);
+window.addEventListener('beforeunload',e=>{if(active||dirty||importing){e.preventDefault();e.returnValue=''}});
+window.addEventListener('online',save);
+render();toBefore();openAlbum();
 }
 </script>
 </body>

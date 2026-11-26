@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
-<head>
+<head><script>if(new URLSearchParams(location.hash.slice(1)).has('ver'))document.documentElement.classList.add('viewer')</script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Confraternização SESÉ 2026 | Rotina x Confra</title>
@@ -96,14 +96,15 @@ h1 .x{display:inline-block;transform:rotate(-8deg);margin:0 .15em}
 @media(max-width:700px){.grid{grid-template-columns:minmax(0,1fr)}.tag{top:10px}.handle::after{width:40px;height:40px}}
 @media(prefers-reduced-motion:reduce){*{animation-duration:.01s!important;transition-duration:.01s!important}}
 [hidden]{display:none!important}
+.viewer main>:not(#stage){display:none!important}.viewer main{padding:0;max-width:none}.viewer #stage{height:100dvh;border-radius:0}.viewer #welcome{position:absolute;inset:0;background:#101020;z-index:30;display:grid;align-content:center;justify-items:center;gap:20px;padding:24px;text-align:center}.viewer #welcome h1{font-size:clamp(28px,6vw,68px);margin:0}.viewer #welcome[hidden]{display:none}
 </style>
 </head>
 <body>
-<main class="band"><div class="bar"><span id="cloudState" role="status">Abrindo álbum…</span><button class="chip" id="saveNow" disabled>Salvar agora</button><button class="chip" id="retrySave" hidden>Tentar novamente</button><button class="chip" id="shareAlbum" disabled>Copiar link do álbum</button></div>
+<main class="band"><div class="bar"><span id="cloudState" role="status">Abrindo álbum…</span><button class="chip" id="saveNow" disabled>Salvar agora</button><button class="chip" id="retrySave" hidden>Tentar novamente</button><button class="chip" id="shareAlbum" disabled>Copiar link do álbum</button><button class="chip" id="shareView" disabled>Gerar link da apresentação</button><a id="viewLink" hidden target="_blank" rel="noopener">Abrir apresentação</a></div>
   <div class="brand"><h1>Rotina<span class="x">×</span>Confra</h1><span class="sep" aria-hidden="true"></span><span class="logo-w"><span class="logo" role="img" aria-label="Sesé"></span></span></div>
   <p class="sub">Monte um comparativo por pessoa, com fotos de antes e depois. O Revelar passa por todo mundo em sequência: antes, contagem, depois, e vai pra próxima pessoa.</p>
 
-  <div class="stage" id="stage">
+  <div class="stage" id="stage"><section id="welcome" hidden><h1>Confraternização SESÉ 2026</h1><p id="viewState" role="status">Carregando apresentação…</p><button id="startView" class="chip present" hidden>Iniciar apresentação</button></section>
     <div class="layer ph" id="A">ROTINA</div>
     <div class="layer ph" id="B">CONFRA</div>
     <span class="count" id="count"></span>
@@ -143,6 +144,7 @@ h1 .x{display:inline-block;transform:rotate(-8deg);margin:0 .15em}
 
 <script>
 {
+const viewing=document.documentElement.classList.contains('viewer');
 const $=id=>document.getElementById(id);
 const A=$('A'),B=$('B'),H=$('H'),stage=$('stage'),big=$('big'),flash=$('flash');
 const P=[{name:'',A:[],B:[]}];let cur=0;
@@ -335,16 +337,16 @@ $('play').onclick=()=>{stopLoop();busy=false;reveal()};
 $('loop').onclick=async()=>{if(looping){stopLoop();return}looping=true;$('loop').classList.add('on');
   while(looping){busy=false;const me=run+1;await reveal();if(!looping||run!==me)break;await wait(per()+1500);if(!looping)break;setFx(fx+1)}};
 $('full').onclick=()=>{try{document.fullscreenElement?document.exitFullscreen():stage.requestFullscreen().catch(()=>{})}catch(e){}};
-document.addEventListener('keydown',e=>{if(e.target.tagName==='INPUT')return;
+document.addEventListener('keydown',e=>{if(viewing||e.target.tagName==='INPUT')return;
   if(e.code==='Space'){e.preventDefault();$('play').click()}
   if(e.key==='ArrowRight'){setFx(fx+1);busy=false;reveal()}
   if(e.key==='ArrowLeft'){setFx(fx-1);busy=false;reveal()}
   if(e.key==='f'||e.key==='F')$('full').click()});
 function presOn(){stopLoop();stage.classList.add('pres');try{stage.requestFullscreen&&stage.requestFullscreen().catch(()=>{})}catch(e){}busy=false;toBefore();setTimeout(()=>{busy=false;reveal()},600)}
-function presOff(){stage.classList.remove('pres');run++;busy=false;stopSound();try{document.fullscreenElement&&document.exitFullscreen()}catch(e){}}
+function presOff(){if(viewing)$('welcome').hidden=false;stage.classList.remove('pres');run++;busy=false;stopSound();try{document.fullscreenElement&&document.exitFullscreen()}catch(e){}}
 $('pres').onclick=presOn;$('exit').onclick=presOff;
 document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement&&stage.classList.contains('pres')){stage.classList.remove('pres')}});
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&stage.classList.contains('pres'))presOff();if((e.key==='p'||e.key==='P')&&e.target.tagName!=='INPUT')presOn()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&stage.classList.contains('pres'))presOff();if(!viewing&&(e.key==='p'||e.key==='P')&&e.target.tagName!=='INPUT')presOn()});
 
 const base='https://sala-conecta-default-rtdb.firebaseio.com/confrasese2026/albums/';
 const encoder=new TextEncoder(), decoder=new TextDecoder();
@@ -358,9 +360,9 @@ function encode(bytes){
   return btoa(raw);
 }
 function decode(value){return Uint8Array.from(atob(value),c=>c.charCodeAt(0))}
-async function seal(value){
+async function seal(value,cryptoKey=key){
   const iv=crypto.getRandomValues(new Uint8Array(12));
-  const cipher=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,encoder.encode(value));
+  const cipher=await crypto.subtle.encrypt({name:'AES-GCM',iv},cryptoKey,encoder.encode(value));
   return encode(iv)+'.'+encode(new Uint8Array(cipher));
 }
 async function unseal(value){
@@ -405,9 +407,11 @@ async function openDrafts(){
   if(!tab){tab=crypto.randomUUID();sessionStorage.setItem('confra2026.tab',tab)}
   draftID=albumURL+'/'+tab;
 }
+let sharing=false, viewerSecret, viewerKey, viewerURL;
+const sharedAssets=new Set();
 function snapshot(){
   return {people:P.map(p=>({name:p.name,A:p.A.map(i=>i.id),B:p.B.map(i=>i.id)})),
-    nA:$('nA').value,nB:$('nB').value,dur:$('dur').value,fx,cdOn,sndOn,...(track?{track:{id:track.id,name:track.name}}:{})};
+    nA:$('nA').value,nB:$('nB').value,dur:$('dur').value,fx,cdOn,sndOn,...(sharing?{shareView:true}:{}),...(track?{track:{id:track.id,name:track.name}}:{})};
 }
 function checkpoint(photo){
   if(!draftDB)return Promise.resolve();
@@ -445,6 +449,7 @@ async function save(){
       await api('state',{method:'PUT',headers:{'if-match':tag,'X-Firebase-ETag':'true'},body:JSON.stringify(await seal(JSON.stringify(manifest)))}).then(r=>{
         tag=r.headers.get('etag');if(!tag)throw Error('O Firebase não confirmou a versão. Reabra o álbum.');
       });
+      if(sharing)await publishView(manifest,photos);
       const next=new Set(photos.map(it=>it.id));
       for(const id of committed)if(!next.has(id))await api('photos/'+id,{method:'DELETE'});
       committed=next;
@@ -469,16 +474,17 @@ async function openAlbum(){
   try{
     const storeKey='confra2026.album';
     const hash=new URLSearchParams(location.hash.slice(1));
-    let secret=hash.get('album')||localStorage.getItem(storeKey);
+    let secret=viewing?hash.get('ver'):hash.get('album')||localStorage.getItem(storeKey);
     if(!secret)secret=encode(crypto.getRandomValues(new Uint8Array(32))).replace(/=+$/,'').replace(/\+/g,'-').replace(/\//g,'_');
     if(!/^[A-Za-z0-9_-]{43}$/.test(secret))throw Error('Link de álbum inválido.');
     const bytes=decode(secret.replace(/-/g,'+').replace(/_/g,'/'));
     key=await crypto.subtle.importKey('raw',bytes,'AES-GCM',false,['encrypt','decrypt']);
     const digest=new Uint8Array(await crypto.subtle.digest('SHA-256',bytes));
     albumURL=base+Array.from(digest,b=>b.toString(16).padStart(2,'0')).join('');
-    history.replaceState(null,'','#album='+secret);localStorage.setItem(storeKey,secret);
-    await openDrafts().catch(()=>{});
-    const draft=draftDB?await transaction('readonly',tx=>tx.objectStore('drafts').get(draftID)):null;
+    if(viewing)albumURL=albumURL.replace('/albums/','/views/');
+    else{history.replaceState(null,'','#album='+secret);localStorage.setItem(storeKey,secret);await initView(secret)}
+    if(!viewing)await openDrafts().catch(()=>{});
+    const draft=!viewing&&draftDB?await transaction('readonly',tx=>tx.objectStore('drafts').get(draftID)):null;
     const response=await api('state',{headers:{'X-Firebase-ETag':'true'}});
     tag=response.headers.get('etag');if(!tag)throw Error('O banco não informou a versão do álbum.');
     const packed=await response.json();
@@ -497,6 +503,7 @@ async function openAlbum(){
         }
         people.push(p);
       }
+      if(!viewing)sharing=!!m.shareView;
       if(m.track){
         const {id,name}=m.track;
         if(!/^[a-f0-9-]{36}$/.test(id))throw Error('Referência de música inválida.');
@@ -510,6 +517,16 @@ async function openAlbum(){
     }
     if(remote)committed=new Set(remote.people.flatMap(p=>p.A.concat(p.B)));
     if(remote?.track)committed.add(remote.track.id);
+    if(viewing){
+      toBefore();
+      const any=P.some(p=>p.A.length||p.B.length);
+      $('viewState').textContent=any?'':'As fotos ainda não foram adicionadas.';
+      $('startView').hidden=!any;
+      stage.inert=false;
+      return;
+    }
+    $('shareView').disabled=false;
+    if(sharing)showLink();
     ready=true;render();toBefore();editing(true);$('shareAlbum').disabled=false;
     $('saveNow').disabled=false;
     const total=P.reduce((n,p)=>n+p.A.length+p.B.length,0);
@@ -519,7 +536,7 @@ async function openAlbum(){
       if(conflict){status('Rascunho recuperado. Outra aba alterou o álbum. Salve uma cópia para preservar as duas versões.');$('retrySave').textContent='Salvar uma cópia';$('retrySave').hidden=false}
       else await save();
     }
-  }catch(e){status('Falha ao abrir o álbum. '+e.message);$('retrySave').hidden=false}
+  }catch(e){if(viewing){stage.inert=false;$('viewState').textContent='Falha ao carregar a apresentação. Atualize para tentar novamente.'}status('Falha ao abrir o álbum. '+e.message);$('retrySave').hidden=false}
 }
 $('retrySave').onclick=async()=>{
   if(!conflict)return ready?save():openAlbum();
@@ -530,7 +547,7 @@ $('retrySave').onclick=async()=>{
   albumURL=base+Array.from(digest,b=>b.toString(16).padStart(2,'0')).join('');
   key=newKey;tag='"null_etag"';uploaded.clear();committed.clear();conflict=false;
   history.replaceState(null,'','#album='+secret);localStorage.setItem('confra2026.album',secret);
-  await openDrafts();for(const p of P)for(const item of [...p.A,...p.B])await checkpoint(item);
+  await initView(secret);sharedAssets.clear();await openDrafts();for(const p of P)for(const item of [...p.A,...p.B])await checkpoint(item);
   if(track)await checkpoint(track);
   dirty=true;await save();
 };
@@ -539,6 +556,41 @@ $('shareAlbum').onclick=async()=>{try{await navigator.clipboard.writeText(locati
 for(const id of ['nA','nB','dur'])$(id).addEventListener('input',()=>changed());
 window.addEventListener('beforeunload',e=>{if(active||dirty||importing||localWrites){e.preventDefault();e.returnValue=''}});
 window.addEventListener('online',save);
+
+async function initView(secret){
+  const digest=async bytes=>new Uint8Array(await crypto.subtle.digest('SHA-256',bytes));
+  const bytes=await digest(encoder.encode('confra-view-v1/'+secret));
+  viewerSecret=encode(bytes).replace(/=+$/,'').replace(/\+/g,'-').replace(/\//g,'_');
+  viewerKey=await crypto.subtle.importKey('raw',bytes,'AES-GCM',false,['encrypt']);
+  viewerURL=base.replace('/albums/','/views/')+Array.from(await digest(bytes),b=>b.toString(16).padStart(2,'0')).join('');
+}
+function showLink(){
+  $('viewLink').href=location.pathname+'?apresentacao=1#ver='+viewerSecret;
+  $('viewLink').hidden=false;
+  $('shareView').textContent='Copiar link da apresentação';
+}
+async function publishView(manifest,assets){
+  async function write(path,data){
+    const res=await fetch(viewerURL+'/'+path+'.json?print=silent',{method:'PUT',body:JSON.stringify(await seal(data,viewerKey))});
+    if(!res.ok)throw Error('Falha ao publicar a apresentação ('+res.status+').');
+  }
+  for(const item of assets){
+    if(!sharedAssets.has(item.id)){await write('photos/'+item.id,item.url);sharedAssets.add(item.id)}
+  }
+  await write('state',JSON.stringify(manifest));showLink();
+}
+$('shareView').onclick=async()=>{
+  if(!sharing||$('viewLink').hidden){sharing=true;await changed();await save()}
+  if(!$('viewLink').hidden){
+    try{await navigator.clipboard.writeText($('viewLink').href);status('Link da apresentação copiado.')}
+    catch{status('O link está disponível em Abrir apresentação.')}
+  }
+};
+$('startView').onclick=()=>{
+  $('welcome').hidden=true;
+  presOn();
+};
+if(viewing)$('welcome').hidden=false;
 render();toBefore();openAlbum();
 }
 </script>

@@ -95,10 +95,11 @@ h1 .x{display:inline-block;transform:rotate(-8deg);margin:0 .15em}
 .caps input{display:block;width:100%;background:var(--card);border:1px solid var(--line);border-radius:12px;color:var(--ink);font:16px Inter;padding:10px 12px;margin-top:4px}
 @media(max-width:700px){.grid{grid-template-columns:minmax(0,1fr)}.tag{top:10px}.handle::after{width:40px;height:40px}}
 @media(prefers-reduced-motion:reduce){*{animation-duration:.01s!important;transition-duration:.01s!important}}
+[hidden]{display:none!important}
 </style>
 </head>
 <body>
-<main class="band"><div class="bar"><span id="cloudState" role="status">Abrindo álbum…</span><button class="chip" id="retrySave" hidden>Tentar novamente</button><button class="chip" id="shareAlbum" disabled>Copiar link do álbum</button></div>
+<main class="band"><div class="bar"><span id="cloudState" role="status">Abrindo álbum…</span><button class="chip" id="saveNow" disabled>Salvar agora</button><button class="chip" id="retrySave" hidden>Tentar novamente</button><button class="chip" id="shareAlbum" disabled>Copiar link do álbum</button></div>
   <div class="brand"><h1>Rotina<span class="x">×</span>Confra</h1><span class="sep" aria-hidden="true"></span><span class="logo-w"><span class="logo" role="img" aria-label="Sesé"></span></span></div>
   <p class="sub">Monte um comparativo por pessoa, com fotos de antes e depois. O Revelar passa por todo mundo em sequência: antes, contagem, depois, e vai pra próxima pessoa.</p>
 
@@ -155,7 +156,7 @@ const FX=[
 let fx=0,mode='show',looping=false,busy=false,run=0;
 const bar=$('fx');
 FX.forEach((f,i)=>{const b=document.createElement('button');b.className='chip'+(i?'':' on');b.textContent=f.n;b.onclick=()=>{setFx(i);busy=false;reveal()};bar.appendChild(b)});
-function setFx(i){changed();fx=(i+FX.length)%FX.length;[...bar.querySelectorAll('.chip')].forEach((c,j)=>c.classList.toggle('on',j===fx))}
+function setFx(i){fx=(i+FX.length)%FX.length;changed();[...bar.querySelectorAll('.chip')].forEach((c,j)=>c.classList.toggle('on',j===fx))}
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
 const per=()=>parseFloat($('dur').value)*1000;
 $('dur').oninput=()=>$('durV').textContent=$('dur').value.replace('.',',')+'s';
@@ -201,7 +202,7 @@ function render(){
             status('Preparando foto…');
             const item=await preparePhoto(file);
             if(!P.includes(p))break;
-            p[k].push(item); changed(); strip(p,k,s);
+            p[k].push(item); await changed(item).catch(()=>{}); strip(p,k,s);
           }
           stopLoop();cur=Math.max(0,P.indexOf(p));mark();toBefore();
         }catch(error){alert('Falha ao adicionar a foto. '+error.message)}
@@ -360,20 +361,57 @@ async function preparePhoto(file){
     return {id:crypto.randomUUID(),url:canvas.toDataURL('image/jpeg',0.78)};
   }finally{URL.revokeObjectURL(url)}
 }
-function changed(){
-  if(!ready)return;
-  dirty=true;clearTimeout(timer);status('Alterações pendentes…');
-  timer=setTimeout(save,450);
+
+let draftDB, draftID, generation=0, localWrites=0, lastLocalWrite=Promise.resolve();
+function transaction(mode,action){
+  return new Promise((resolve,reject)=>{
+    const tx=draftDB.transaction(['drafts','photos'],mode);
+    const result=action(tx);
+    tx.oncomplete=()=>resolve(result?.result);
+    tx.onerror=tx.onabort=()=>reject(tx.error||Error('Falha ao gravar neste aparelho.'));
+  });
+}
+async function openDrafts(){
+  if(!draftDB)draftDB=await new Promise((resolve,reject)=>{
+    const req=indexedDB.open('confra2026-rascunhos',1);
+    req.onupgradeneeded=()=>{req.result.createObjectStore('drafts');req.result.createObjectStore('photos')};
+    req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);
+  });
+  let tab=sessionStorage.getItem('confra2026.tab');
+  if(!tab){tab=crypto.randomUUID();sessionStorage.setItem('confra2026.tab',tab)}
+  draftID=albumURL+'/'+tab;
+}
+function snapshot(){
+  return {people:P.map(p=>({name:p.name,A:p.A.map(i=>i.id),B:p.B.map(i=>i.id)})),
+    nA:$('nA').value,nB:$('nB').value,dur:$('dur').value,fx,cdOn,sndOn};
+}
+function checkpoint(photo){
+  if(!draftDB)return Promise.resolve();
+  const data={baseTag:tag,manifest:snapshot()};
+  localWrites++;
+  lastLocalWrite=transaction('readwrite',tx=>{
+    if(photo)tx.objectStore('photos').put(photo.url,draftID+'/'+photo.id);
+    tx.objectStore('drafts').put(data,draftID);
+  }).finally(()=>localWrites--);
+  return lastLocalWrite;
+}
+function changed(photo){
+  if(!ready)return Promise.resolve();
+  generation++;dirty=true;clearTimeout(timer);
+  const written=checkpoint(photo);
+  written.catch(()=>status('Espaço local indisponível. Aguarde a confirmação do Firebase.'));
+  status('Alterações pendentes…');
+  timer=setTimeout(save,350);
+  return written;
 }
 async function save(){
   if(active||!ready||conflict||!dirty)return;
   active=true;$('retrySave').hidden=true;
   try{
     while(dirty){
-      dirty=false;status('Salvando no Firebase…');
+      const revision=generation;dirty=false;status('Salvando no Firebase…');
       const photos=P.flatMap(p=>p.A.concat(p.B));
-      const people=P.map(p=>({name:p.name,A:p.A.map(it=>it.id),B:p.B.map(it=>it.id)}));
-      const manifest={people,nA:$('nA').value,nB:$('nB').value,dur:$('dur').value,fx,cdOn,sndOn};
+      const manifest=snapshot();
       for(const photo of photos){
         if(uploaded.has(photo.id))continue;
         await api('photos/'+photo.id,{method:'PUT',body:JSON.stringify(await seal(photo.url))});
@@ -385,9 +423,15 @@ async function save(){
       const next=new Set(photos.map(it=>it.id));
       for(const id of committed)if(!next.has(id))await api('photos/'+id,{method:'DELETE'});
       committed=next;
+      if(draftDB&&generation===revision){
+        await transaction('readwrite',tx=>{
+          tx.objectStore('drafts').delete(draftID);
+          tx.objectStore('photos').delete(IDBKeyRange.bound(draftID+'/',draftID+'/\uffff'));
+        }).catch(()=>{});
+      }else if(draftDB)await checkpoint().catch(()=>{});
     }
-    status('Salvo no Firebase');
-  }catch(e){dirty=true;status('Não foi salvo. '+e.message);$('retrySave').hidden=conflict}
+    status('Salvo no Firebase · '+P.reduce((n,p)=>n+p.A.length+p.B.length,0)+' foto(s)');
+  }catch(e){dirty=true;status('Não foi salvo. '+e.message);$('retrySave').hidden=false;if(conflict)$('retrySave').textContent='Salvar uma cópia'}
   finally{active=false}
 }
 function editing(enabled){
@@ -407,17 +451,24 @@ async function openAlbum(){
     key=await crypto.subtle.importKey('raw',bytes,'AES-GCM',false,['encrypt','decrypt']);
     const digest=new Uint8Array(await crypto.subtle.digest('SHA-256',bytes));
     albumURL=base+Array.from(digest,b=>b.toString(16).padStart(2,'0')).join('');
+    history.replaceState(null,'','#album='+secret);localStorage.setItem(storeKey,secret);
+    await openDrafts().catch(()=>{});
+    const draft=draftDB?await transaction('readonly',tx=>tx.objectStore('drafts').get(draftID)):null;
     const response=await api('state',{headers:{'X-Firebase-ETag':'true'}});
     tag=response.headers.get('etag');if(!tag)throw Error('O banco não informou a versão do álbum.');
     const packed=await response.json();
-    if(packed!==null){
-      const m=JSON.parse(await unseal(packed)),people=[];
+    const remote=packed===null?null:JSON.parse(await unseal(packed));
+    const needsSync=!!draft&&JSON.stringify(draft.manifest)!==JSON.stringify(remote);
+    if(needsSync&&tag!==draft.baseTag)conflict=true;
+    if(remote||draft){
+      const m=needsSync?draft.manifest:remote,people=[];
       for(const person of m.people){
         const p={name:person.name,A:[],B:[]};
         for(const side of ['A','B'])for(const id of person[side]){
           if(!/^[a-f0-9-]{36}$/.test(id))throw Error('Referência de foto inválida.');
-          const url=await unseal(await (await api('photos/'+id)).json());
-          p[side].push({id,url});uploaded.add(id);committed.add(id);
+          let url=needsSync&&await transaction('readonly',tx=>tx.objectStore('photos').get(draftID+'/'+id));
+          if(!url){url=await unseal(await (await api('photos/'+id)).json());uploaded.add(id)}
+          p[side].push({id,url});
         }
         people.push(p);
       }
@@ -425,15 +476,34 @@ async function openAlbum(){
       setFx(m.fx);cdOn=m.cdOn;sndOn=m.sndOn;
       $('cdOn').classList.toggle('on',cdOn);$('sndOn').classList.toggle('on',sndOn);
     }
-    history.replaceState(null,'','#album='+secret);localStorage.setItem(storeKey,secret);
+    if(remote)committed=new Set(remote.people.flatMap(p=>p.A.concat(p.B)));
     ready=true;render();toBefore();editing(true);$('shareAlbum').disabled=false;
-    status(packed?'Álbum carregado do Firebase':'Álbum pronto para receber fotos');
+    $('saveNow').disabled=false;
+    const total=P.reduce((n,p)=>n+p.A.length+p.B.length,0);
+    status(packed?'Álbum carregado do Firebase · '+total+' foto(s)':'Álbum pronto para receber fotos');
+    if(needsSync){
+      dirty=true;
+      if(conflict){status('Rascunho recuperado. Outra aba alterou o álbum. Salve uma cópia para preservar as duas versões.');$('retrySave').textContent='Salvar uma cópia';$('retrySave').hidden=false}
+      else await save();
+    }
   }catch(e){status('Falha ao abrir o álbum. '+e.message);$('retrySave').hidden=false}
 }
-$('retrySave').onclick=()=>ready?save():openAlbum();
+$('retrySave').onclick=async()=>{
+  if(!conflict)return ready?save():openAlbum();
+  const secret=encode(crypto.getRandomValues(new Uint8Array(32))).replace(/=+$/,'').replace(/\+/g,'-').replace(/\//g,'_');
+  const bytes=decode(secret.replace(/-/g,'+').replace(/_/g,'/'));
+  const newKey=await crypto.subtle.importKey('raw',bytes,'AES-GCM',false,['encrypt','decrypt']);
+  const digest=new Uint8Array(await crypto.subtle.digest('SHA-256',bytes));
+  albumURL=base+Array.from(digest,b=>b.toString(16).padStart(2,'0')).join('');
+  key=newKey;tag='"null_etag"';uploaded.clear();committed.clear();conflict=false;
+  history.replaceState(null,'','#album='+secret);localStorage.setItem('confra2026.album',secret);
+  await openDrafts();for(const p of P)for(const item of [...p.A,...p.B])await checkpoint(item);
+  dirty=true;await save();
+};
+$('saveNow').onclick=()=>{if(!ready||conflict||active)return;dirty=true;clearTimeout(timer);save()};
 $('shareAlbum').onclick=async()=>{try{await navigator.clipboard.writeText(location.href);$('shareAlbum').textContent='Link copiado'}catch{prompt('Copie o link do álbum',location.href)}};
 for(const id of ['nA','nB','dur'])$(id).addEventListener('input',changed);
-window.addEventListener('beforeunload',e=>{if(active||dirty||importing){e.preventDefault();e.returnValue=''}});
+window.addEventListener('beforeunload',e=>{if(active||dirty||importing||localWrites){e.preventDefault();e.returnValue=''}});
 window.addEventListener('online',save);
 render();toBefore();openAlbum();
 }

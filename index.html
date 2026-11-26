@@ -133,9 +133,12 @@ h1 .x{display:inline-block;transform:rotate(-8deg);margin:0 .15em}
     <span class="lbl">Extras:</span>
     <button class="chip on" id="cdOn">⏱ Contagem 3·2·1</button>
     <button class="chip on" id="sndOn">🔊 Som</button>
+    <button class="chip" id="pickTrack">Escolher música</button><input id="trackFile" type="file" accept="audio/mpeg,.mp3" hidden>
+    <span id="trackTitle"></span><audio id="albumAudio" controls loop preload="metadata" hidden style="max-width:100%"></audio>
+    <button class="chip" id="clearTrack" hidden>Usar batida original</button>
     
   </div>
-  <p class="hint">Cada pessoa tem seu ▶ para revelar só ela. Arraste vários arquivos de uma vez para cada quadro; a ordem das miniaturas é a ordem da apresentação. A apresentação tem uma batida embutida. <b>🎬 Apresentar</b> abre em tela cheia com a logo e roda todos. Atalhos: <b>P</b> apresenta · <b>Esc</b> sai · <b>espaço</b> revela · <b>← →</b> troca a passagem · <b>F</b> tela cheia. Use o link do álbum para abrir as mesmas fotos em outro aparelho. Quem tiver o link pode ver e editar.</p>
+  <p class="hint">Cada pessoa tem seu ▶ para revelar só ela. Arraste vários arquivos de uma vez para cada quadro; a ordem das miniaturas é a ordem da apresentação. A música escolhida começa na revelação da foto da confraternização. <b>🎬 Apresentar</b> abre em tela cheia com a logo e roda todos. Atalhos: <b>P</b> apresenta · <b>Esc</b> sai · <b>espaço</b> revela · <b>← →</b> troca a passagem · <b>F</b> tela cheia. Use o link do álbum para abrir as mesmas fotos em outro aparelho. Quem tiver o link pode ver e editar.</p>
 </main>
 
 <script>
@@ -291,7 +294,28 @@ async function reveal(list){
 }
 
 /* som */
-let AC=null,cdOn=true,sndOn=true;const music=new Audio();music.loop=true;
+let AC=null,cdOn=true,sndOn=true;const music=$('albumAudio');let track=null;
+function setTrack(item){
+  music.pause();track=item;
+  if(item)music.src=item.url;else music.removeAttribute('src');
+  music.load();music.hidden=!item;$('clearTrack').hidden=!item;
+  $('pickTrack').textContent=item?'Trocar música':'Escolher música';
+  $('trackTitle').textContent=item?item.name:'Batida original';
+}
+$('pickTrack').onclick=()=>$('trackFile').click();
+$('trackFile').onchange=async e=>{
+  const file=e.target.files[0];e.target.value='';if(!file)return;
+  if(!/\.mp3$/i.test(file.name)||file.size>8*1024*1024||!file.size){alert('Escolha um arquivo MP3 de até 8 MB.');return}
+  importing++;$('pickTrack').disabled=true;
+  try{
+    const url='data:audio/mpeg;base64,'+encode(new Uint8Array(await file.arrayBuffer()));
+    const item={id:crypto.randomUUID(),name:file.name.replace(/\.mp3$/i,''),url};
+    setTrack(item);await changed(item);
+  }catch(error){status('Falha ao preparar música. '+error.message)}
+  finally{importing--;$('pickTrack').disabled=false}
+};
+$('clearTrack').onclick=()=>{setTrack(null);changed()};
+setTrack(null);
 function ac(){try{AC=AC||new (window.AudioContext||window.webkitAudioContext)();AC.resume&&AC.resume()}catch(e){}return AC}
 function tone(f,t0,dur,type,vol,f2){const c=ac();if(!c||!sndOn)return;const o=c.createOscillator(),g=c.createGain();o.type=type;o.frequency.setValueAtTime(f,t0);if(f2)o.frequency.exponentialRampToValueAtTime(f2,t0+dur);g.gain.setValueAtTime(vol,t0);g.gain.exponentialRampToValueAtTime(.001,t0+dur);o.connect(g).connect(c.destination);o.start(t0);o.stop(t0+dur)}
 function tick(f){const c=ac();c&&tone(f,c.currentTime,.25,'square',.12)}
@@ -383,7 +407,7 @@ async function openDrafts(){
 }
 function snapshot(){
   return {people:P.map(p=>({name:p.name,A:p.A.map(i=>i.id),B:p.B.map(i=>i.id)})),
-    nA:$('nA').value,nB:$('nB').value,dur:$('dur').value,fx,cdOn,sndOn};
+    nA:$('nA').value,nB:$('nB').value,dur:$('dur').value,fx,cdOn,sndOn,...(track?{track:{id:track.id,name:track.name}}:{})};
 }
 function checkpoint(photo){
   if(!draftDB)return Promise.resolve();
@@ -411,6 +435,7 @@ async function save(){
     while(dirty){
       const revision=generation;dirty=false;status('Salvando no Firebase…');
       const photos=P.flatMap(p=>p.A.concat(p.B));
+      if(track)photos.push(track);
       const manifest=snapshot();
       for(const photo of photos){
         if(uploaded.has(photo.id))continue;
@@ -430,7 +455,7 @@ async function save(){
         }).catch(()=>{});
       }else if(draftDB)await checkpoint().catch(()=>{});
     }
-    status('Salvo no Firebase · '+P.reduce((n,p)=>n+p.A.length+p.B.length,0)+' foto(s)');
+    status('Salvo no Firebase · '+P.reduce((n,p)=>n+p.A.length+p.B.length,0)+' foto(s)'+(track?' e música':''));
   }catch(e){dirty=true;status('Não foi salvo. '+e.message);$('retrySave').hidden=false;if(conflict)$('retrySave').textContent='Salvar uma cópia'}
   finally{active=false}
 }
@@ -472,11 +497,19 @@ async function openAlbum(){
         }
         people.push(p);
       }
+      if(m.track){
+        const {id,name}=m.track;
+        if(!/^[a-f0-9-]{36}$/.test(id))throw Error('Referência de música inválida.');
+        let url=needsSync&&await transaction('readonly',tx=>tx.objectStore('photos').get(draftID+'/'+id));
+        if(!url){url=await unseal(await (await api('photos/'+id)).json());uploaded.add(id)}
+        setTrack({id,name,url});
+      }else setTrack(null);
       P.splice(0,P.length,...people);$('nA').value=m.nA;$('nB').value=m.nB;$('dur').value=m.dur;$('dur').oninput();
       setFx(m.fx);cdOn=m.cdOn;sndOn=m.sndOn;
       $('cdOn').classList.toggle('on',cdOn);$('sndOn').classList.toggle('on',sndOn);
     }
     if(remote)committed=new Set(remote.people.flatMap(p=>p.A.concat(p.B)));
+    if(remote?.track)committed.add(remote.track.id);
     ready=true;render();toBefore();editing(true);$('shareAlbum').disabled=false;
     $('saveNow').disabled=false;
     const total=P.reduce((n,p)=>n+p.A.length+p.B.length,0);
@@ -498,11 +531,12 @@ $('retrySave').onclick=async()=>{
   key=newKey;tag='"null_etag"';uploaded.clear();committed.clear();conflict=false;
   history.replaceState(null,'','#album='+secret);localStorage.setItem('confra2026.album',secret);
   await openDrafts();for(const p of P)for(const item of [...p.A,...p.B])await checkpoint(item);
+  if(track)await checkpoint(track);
   dirty=true;await save();
 };
 $('saveNow').onclick=()=>{if(!ready||conflict||active)return;dirty=true;clearTimeout(timer);save()};
 $('shareAlbum').onclick=async()=>{try{await navigator.clipboard.writeText(location.href);$('shareAlbum').textContent='Link copiado'}catch{prompt('Copie o link do álbum',location.href)}};
-for(const id of ['nA','nB','dur'])$(id).addEventListener('input',changed);
+for(const id of ['nA','nB','dur'])$(id).addEventListener('input',()=>changed());
 window.addEventListener('beforeunload',e=>{if(active||dirty||importing||localWrites){e.preventDefault();e.returnValue=''}});
 window.addEventListener('online',save);
 render();toBefore();openAlbum();

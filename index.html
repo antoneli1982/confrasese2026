@@ -97,10 +97,18 @@ h1 .x{display:inline-block;transform:rotate(-8deg);margin:0 .15em}
 @media(prefers-reduced-motion:reduce){*{animation-duration:.01s!important;transition-duration:.01s!important}}
 [hidden]{display:none!important}
 .viewer main>:not(#stage){display:none!important}.viewer main{padding:0;max-width:none}.viewer #stage{height:100dvh;border-radius:0}.viewer #welcome{position:absolute;inset:0;background:#101020;z-index:30;display:grid;align-content:center;justify-items:center;gap:20px;padding:24px;text-align:center}.viewer #welcome h1{font-size:clamp(28px,6vw,68px);margin:0}.viewer #welcome[hidden]{display:none}
+.finish{margin-top:28px;padding:24px;border:1px solid var(--line);border-radius:18px;background:var(--card)}
+.finish h2{margin:0 0 6px;font-size:1.25rem}
+.finish>p{margin:0 0 18px;color:var(--mut)}
+.finish-actions{display:flex;flex-wrap:wrap;gap:12px}
+.finish-actions .chip{min-height:48px;font-size:1rem;padding:12px 20px}
+.finish .bar{flex-wrap:wrap}
+.finish>.hint{margin:14px 0 0}
+@media(max-width:600px){.finish{padding:18px}.finish-actions{flex-direction:column}.finish-actions .chip{width:100%}}
 </style>
 </head>
 <body>
-<main class="band"><div class="bar"><span id="cloudState" role="status">Abrindo álbum…</span><button class="chip" id="saveNow" disabled>Salvar agora</button><button class="chip" id="retrySave" hidden>Tentar novamente</button><button class="chip" id="shareAlbum" disabled>Copiar link do álbum</button><button class="chip" id="shareView" disabled>Gerar link da apresentação</button><a id="viewLink" hidden target="_blank" rel="noopener">Abrir apresentação</a></div>
+<main class="band">
   <div class="brand"><h1>Rotina<span class="x">×</span>Confra</h1><span class="sep" aria-hidden="true"></span><span class="logo-w"><span class="logo" role="img" aria-label="Sesé"></span></span></div>
   <p class="sub">Monte um comparativo por pessoa, com fotos de antes e depois. O Revelar passa por todo mundo em sequência: antes, contagem, depois, e vai pra próxima pessoa.</p>
 
@@ -124,7 +132,6 @@ h1 .x{display:inline-block;transform:rotate(-8deg);margin:0 .15em}
   <div class="bar"><button class="chip" id="addP">+ Adicionar pessoa / comparativo</button></div>
   <div class="bar" id="fx"><span class="lbl">Passagem:</span></div>
   <div class="bar">
-    <button class="chip present" id="pres">🎬 Apresentar</button>
     <button class="chip go" id="play">▶ Revelar todos</button>
     <button class="chip" id="loop">🔁 Loop</button>
     <button class="chip" id="full">⛶ Tela cheia</button>
@@ -139,7 +146,20 @@ h1 .x{display:inline-block;transform:rotate(-8deg);margin:0 .15em}
     <button class="chip" id="clearTrack" hidden>Usar batida original</button>
     
   </div>
-  <p class="hint">Cada pessoa tem seu ▶ para revelar só ela. Arraste vários arquivos de uma vez para cada quadro; a ordem das miniaturas é a ordem da apresentação. A música escolhida começa na revelação da foto da confraternização. <b>🎬 Apresentar</b> abre em tela cheia com a logo e roda todos. Atalhos: <b>P</b> apresenta · <b>Esc</b> sai · <b>espaço</b> revela · <b>← →</b> troca a passagem · <b>F</b> tela cheia. Use o link do álbum para abrir as mesmas fotos em outro aparelho. Quem tiver o link pode ver e editar.</p>
+  <p class="hint">Cada pessoa tem seu ▶ para revelar só ela. Arraste vários arquivos de uma vez para cada quadro; a ordem das miniaturas é a ordem da apresentação. A música escolhida começa na revelação da foto da confraternização. <b>Apresentar resultado</b> abre em tela cheia com a logo e roda todos. Atalhos: <b>P</b> apresenta · <b>Esc</b> sai · <b>espaço</b> revela · <b>← →</b> troca a passagem · <b>F</b> tela cheia. Use o link do álbum para abrir as mesmas fotos em outro aparelho. Quem tiver o link pode ver e editar.</p>
+
+  <section class="finish" aria-label="Finalizar apresentação">
+    <h2>Pronto para apresentar?</h2>
+    <p>Confira o resultado e salve sua apresentação.</p>
+    <div class="finish-actions">
+      <button class="chip present" id="pres">Apresentar resultado</button>
+      <button class="chip" id="saveNow" disabled>Salvar</button>
+      <button class="chip" id="shareView" disabled>Salvar apresentação</button>
+    </div>
+    <div class="bar"><span id="cloudState" role="status">Abrindo álbum…</span><button class="chip" id="retrySave" hidden>Tentar novamente</button></div>
+    <div class="bar"><button class="chip" id="shareAlbum" disabled>Copiar link do álbum</button><a id="viewLink" hidden target="_blank" rel="noopener">Abrir apresentação</a></div>
+    <p class="hint">Salvar guarda as fotos e as configurações do álbum. Salvar apresentação disponibiliza o resultado por link para assistir.</p>
+  </section>
 </main>
 
 <script>
@@ -567,7 +587,7 @@ async function initView(secret){
 function showLink(){
   $('viewLink').href=location.pathname+'?apresentacao=1#ver='+viewerSecret;
   $('viewLink').hidden=false;
-  $('shareView').textContent='Copiar link da apresentação';
+  $('shareView').textContent='Salvar apresentação';
 }
 async function publishView(manifest,assets){
   async function write(path,data){

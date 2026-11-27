@@ -126,6 +126,12 @@ h1 .x{display:inline-block;transform:rotate(-8deg);margin:0 .15em}
 @media(max-width:480px){.finish-actions{grid-template-columns:minmax(0,1fr);gap:16px}.finish-actions #shareView{grid-column:1;grid-row:2}.finish-actions #saveNow{grid-column:1;grid-row:3}.finish-actions #pres{font-size:1rem;padding:18px 12px}.finish .bar .chip{justify-content:center;width:100%}}
 
 .brand h1{overflow-wrap:anywhere}.custom-logo{display:block;max-width:min(240px,55vw);height:clamp(34px,5.2vw,58px);object-fit:contain}.logo-w:has(.custom-logo){filter:none}.exit{opacity:1}.stage.pres{height:100dvh}
+#openReel{grid-column:1/-1;background:linear-gradient(110deg,#6229a3,#b51e69,#913d19);color:white}
+#reelDialog{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:20px;padding:24px;width:min(520px,94vw);max-height:88dvh;overflow:auto}
+#reelDialog::backdrop{background:#000b}
+#reelDialog h2{margin:0}#reelPeople{border:1px solid var(--line);border-radius:12px}
+#reelPeople label{display:flex;align-items:center;gap:10px;padding:9px;overflow-wrap:anywhere}
+#reelPeople input{accent-color:var(--lime)}#reelPreview{display:block;max-height:40dvh;max-width:100%;margin:auto}
 </style>
 </head>
 <body>
@@ -180,12 +186,25 @@ h1 .x{display:inline-block;transform:rotate(-8deg);margin:0 .15em}
       <button class="chip present" id="pres">Apresentar resultado</button>
       <button class="chip" id="saveNow" disabled>Salvar</button>
       <button class="chip" id="shareView" disabled>Salvar apresentação</button>
+      <button class="chip" id="openReel" disabled><svg aria-hidden="true" width="25" height="25" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.4" cy="6.8" r="1" fill="currentColor" stroke="none"/></svg>Vídeo para o Instagram</button>
     </div>
     <div class="bar"><span id="cloudState" role="status">Abrindo álbum…</span><button class="chip" id="retrySave" hidden>Tentar novamente</button></div>
     <div class="bar"><button class="chip" id="shareAlbum" disabled>Copiar link do álbum</button><a id="viewLink" hidden target="_blank" rel="noopener">Abrir apresentação</a></div>
     <p class="hint">Salvar guarda as fotos e as configurações do álbum. Salvar apresentação disponibiliza o resultado por link para assistir.</p>
   </section>
 </main>
+<dialog id="reelDialog" aria-labelledby="reelTitle">
+  <h2 id="reelTitle">Vídeo para o Instagram</h2>
+  <p>Escolha quem vai aparecer. Cada pessoa entra com as fotos de antes e depois, na ordem do álbum.</p>
+  <fieldset id="reelPeople"><legend>Pessoas no vídeo</legend></fieldset>
+  <p id="reelDetails"></p>
+  <video id="reelPreview" controls playsinline hidden></video>
+  <p id="reelStatus" role="status"></p>
+  <div class="bar"><button id="makeReel" class="chip go">Gerar vídeo</button>
+  <a id="reelDownload" class="chip on" hidden>Baixar MP4</a>
+  <button id="closeReel" class="chip">Fechar</button></div>
+</dialog>
+
 
 <script>
 {
@@ -573,7 +592,7 @@ async function openAlbum(){
       stage.inert=false;
       return;
     }
-    $('shareView').disabled=false;
+    $('shareView').disabled=false;$('openReel').disabled=false;
     if(sharing)showLink();
     ready=true;render();toBefore();editing(true);$('shareAlbum').disabled=false;
     $('saveNow').disabled=false;
@@ -668,6 +687,204 @@ $('logoFile').onchange=async e=>{
   finally{URL.revokeObjectURL(url);importing--;$('pickLogo').disabled=false}
 };
 applyBrand();
+
+const reelDialog = $('reelDialog');
+let reelJob;
+let reelUrl;
+
+function clearReel() {
+  $('reelPreview').pause();
+  $('reelPreview').removeAttribute('src');
+  $('reelPreview').load();
+  $('reelPreview').hidden = true;
+  $('reelDownload').hidden = true;
+  $('reelDownload').removeAttribute('href');
+  if (reelUrl) URL.revokeObjectURL(reelUrl);
+  reelUrl = null;
+}
+
+function selectedSlides() {
+  const slides = [];
+  for (const input of $('reelPeople').querySelectorAll('input:checked')) {
+    const person = P[Number(input.value)];
+    for (const side of ['A', 'B']) {
+      for (const photo of person[side]) {
+        slides.push({url: photo.url, name: person.name || 'Pessoa ' + (Number(input.value) + 1),
+          label: $('n' + side).value.trim() || (side === 'A' ? 'Antes' : 'Depois')});
+      }
+    }
+  }
+  return slides;
+}
+
+function refreshSelection() {
+  clearReel();
+  const count = selectedSlides().length;
+  $('makeReel').disabled = !count;
+  $('reelDetails').textContent = 'MP4 vertical · 1080 × 1920 · ' +
+    (count * per() / 1000).toLocaleString('pt-BR') + ' s · ' +
+    (track && sndOn ? track.name : 'Sem música');
+  $('reelStatus').textContent = '';
+}
+
+$('openReel').onclick = () => {
+  const field = $('reelPeople');
+  field.querySelectorAll('label').forEach(el => el.remove());
+  P.forEach((person, i) => {
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.value = i;
+    input.disabled = !(person.A.length && person.B.length);
+    const label = document.createElement('label');
+    label.append(input, (person.name || 'Pessoa ' + (i + 1)) + ' · ' +
+      person.A.length + ' antes / ' + person.B.length + ' depois');
+    field.append(label);
+  });
+  refreshSelection();
+  if (!field.querySelector('input:enabled'))
+    $('reelStatus').textContent = 'Adicione pelo menos uma foto de antes e uma de depois à mesma pessoa.';
+  reelDialog.showModal();
+};
+$('reelPeople').onchange = refreshSelection;
+reelDialog.addEventListener('keydown', e => e.stopPropagation());
+$('closeReel').onclick = () => reelDialog.close();
+reelDialog.onclose = () => { reelJob?.abort(); clearReel() };
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && reelJob) reelJob.abort();
+});
+
+async function loadReelImage(url) {
+  const image = new Image();
+  image.src = url;
+  await image.decode();
+  return image;
+}
+
+function drawReelFrame(ctx, slide, photo, logo) {
+  const {width, height} = ctx.canvas;
+  ctx.fillStyle = '#16131c';
+  ctx.fillRect(0, 0, width, height);
+  const scale = Math.min(width / photo.width, 1280 / photo.height);
+  const w = photo.width * scale, h = photo.height * scale;
+  ctx.drawImage(photo, (width - w) / 2, (height - h) / 2, w, h);
+  if (logo) {
+    const k = Math.min(240 / logo.width, 96 / logo.height);
+    ctx.drawImage(logo, 72, 120, logo.width * k, logo.height * k);
+  }
+  ctx.font = 'bold 44px sans-serif';
+  ctx.fillStyle = '#fff';
+  ctx.fillText($('eventHeading').textContent, 72, 282, 900);
+  ctx.fillStyle = '#d4ff3a';
+  ctx.fillText(slide.label, 72, 1660, 890);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 68px sans-serif';
+  ctx.fillText(slide.name, 72, 1750, 890);
+}
+
+async function recordReel(slides, signal) {
+  const withMusic = !!(track && sndOn);
+  const mime = withMusic ? 'video/mp4;codecs=avc1,mp4a.40.2' : 'video/mp4;codecs=avc1';
+  if (!window.MediaRecorder?.isTypeSupported(mime) || !HTMLCanvasElement.prototype.captureStream)
+    throw Error('Este navegador não oferece gravação MP4/H.264. Abra o álbum no Chrome ou Safari atualizado.');
+  const canvas = document.createElement('canvas');
+  canvas.width = 1080;
+  canvas.height = 1920;
+  const ctx = canvas.getContext('2d', {alpha:false});
+  let stream, recorder, audio, sound, raf;
+  const stop = () => { if (recorder?.state === 'recording') recorder.stop() };
+  try {
+    if (withMusic) {
+      sound = new AudioContext();
+      await sound.resume();
+      audio = new Audio(track.url);
+      audio.loop = true;
+    }
+    const logo = eventLogo ? await loadReelImage(eventLogo) : null;
+    let photo = await loadReelImage(slides[0].url);
+    signal.throwIfAborted();
+    drawReelFrame(ctx, slides[0], photo, logo);
+    stream = canvas.captureStream(30);
+    if (audio) {
+      const destination = sound.createMediaStreamDestination();
+      sound.createMediaElementSource(audio).connect(destination);
+      stream.addTrack(destination.stream.getAudioTracks()[0]);
+      await audio.play();
+    }
+    signal.throwIfAborted();
+    recorder = new MediaRecorder(stream, {mimeType:mime, videoBitsPerSecond:6000000});
+    const parts = [];
+    recorder.ondataavailable = e => { if (e.data.size) parts.push(e.data) };
+    const done = new Promise((resolve, reject) => {
+      recorder.onstop = resolve;
+      recorder.onerror = () => reject(Error('O navegador interrompeu a gravação.'));
+    });
+    const duration = per();
+    signal.addEventListener('abort', stop, {once:true});
+    recorder.start(1000);
+    let index = 0, start = performance.now(), next, failure;
+    function preload() {
+      next = slides[index + 1] && loadReelImage(slides[index + 1].url)
+        .catch(() => { failure = Error('Falha ao carregar uma foto.'); stop() });
+      $('reelStatus').textContent = 'Gerando foto ' + (index + 1) + ' de ' + slides.length + '. Mantenha esta tela aberta.';
+    }
+    preload();
+    async function frame(now) {
+      try {
+        if (signal.aborted || recorder.state !== 'recording') return;
+        if (now - start >= duration) {
+          if (!next) { stop(); return }
+          photo = await next;
+          if (!photo || signal.aborted || recorder.state !== 'recording') return;
+          index++;
+          start = performance.now();
+          preload();
+        }
+        drawReelFrame(ctx, slides[index], photo, logo);
+        raf = requestAnimationFrame(frame);
+      } catch (e) { failure = e; stop() }
+    }
+    raf = requestAnimationFrame(frame);
+    await done;
+    signal.throwIfAborted();
+    if (failure) throw failure;
+    if (!parts.length) throw Error('O navegador gerou um arquivo vazio.');
+    return new Blob(parts, {type:'video/mp4'});
+  } finally {
+    cancelAnimationFrame(raf);
+    signal.removeEventListener('abort', stop);
+    stop();
+    audio?.pause();
+    stream?.getTracks().forEach(t => t.stop());
+    if (sound) await sound.close();
+  }
+}
+
+$('makeReel').onclick = async () => {
+  if (reelJob) return;
+  const slides = selectedSlides();
+  if (!slides.length) return;
+  clearReel();
+  reelJob = new AbortController();
+  $('reelPeople').disabled = $('makeReel').disabled = true;
+  $('closeReel').textContent = 'Cancelar';
+  $('reelStatus').textContent = 'Preparando vídeo…';
+  try {
+    const blob = await recordReel(slides, reelJob.signal);
+    reelJob.signal.throwIfAborted();
+    reelUrl = URL.createObjectURL(blob);
+    $('reelPreview').src = reelUrl;
+    $('reelDownload').href = reelUrl;
+    $('reelDownload').download = ($('eventHeading').textContent.replace(/[^\p{L}\p{N} -]/gu, '').trim() || 'Evento') + '-instagram.mp4';
+    $('reelDownload').hidden = $('reelPreview').hidden = false;
+    $('reelStatus').textContent = 'Confira a prévia e baixe o vídeo para publicar.';
+  } catch (e) {
+    $('reelStatus').textContent = reelJob.signal.aborted ? 'Geração interrompida. Você pode gerar novamente.' : e.message;
+  } finally {
+    reelJob = null;
+    $('closeReel').textContent = 'Fechar';
+    $('reelPeople').disabled = $('makeReel').disabled = false;
+  }
+};
 
 render();toBefore();openAlbum();
 }
